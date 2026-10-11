@@ -49,14 +49,22 @@ where `l1` is a Lagrange multiplier fixed by the forbidden control.
    `|psi_f(phi, Omega_B)>` it finds the allowed integer branches `(k, l)`, computes
    `T(k, l)` from Eq. 103, and confirms the result by simulating the Qiskit circuit.
 
-`bell.py` is a two-line sanity check that Qiskit and Aer are installed (Bell state, 1000 shots).
-
 ### Interactive app
 
-`app.py` is a Streamlit front end over the same functions. Pick ω and a target state in the
-sidebar and the app shows the restricted versus unrestricted minimum time, every candidate
-branch `(k, l)` with its fidelity, the Qiskit circuit, an Aer measurement run, the Bloch-vector
-trajectory, and a button that regenerates Fig. 2.
+`app.py` is a Streamlit front end over the same functions. Pick ω and a problem in the
+sidebar and the app shows the restricted versus unrestricted minimum time, every extremal
+branch with its fidelity, the Qiskit circuit (exact unitary, transpiled to `rz, sx, x`), an Aer
+measurement run, the Bloch-vector trajectory, and a button that regenerates Fig. 2. Three modes:
+
+1. **Example A, target from a branch `(k, λ₁)`**: always lands on a solvable target.
+2. **Example A, direct `(φ, Ω_B)` entry**: uses the paper's closed forms, Eqs. 97-105.
+3. **Any initial and final state**: Bloch-angle sliders for both states, solved by
+   `qb_solve_m1`, a multistart root finder over `(α, λ₁, T)` for the general closed-subalgebra
+   family `H(0) = ω (cos α σ_x + sin α σ_y)`. The paper's extra endpoint condition, Eq. 55, is
+   reported per branch but not imposed; see the note in the `qb_example_A.py` docstring.
+
+All Qiskit circuit construction runs in a short-lived subprocess, `qb_worker.py`, because
+creating circuits across Streamlit reruns crashes Qiskit 2.5's Rust allocator on Python 3.14.
 
 ```bash
 streamlit run app.py
@@ -90,7 +98,6 @@ git clone https://github.com/dirichlettt/qollab_hackathon_2026.git
 cd qollab_hackathon_2026
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python bell.py           # sanity check: Qiskit + Aer work
 python qb_example_A.py   # full reproduction; writes qb_fig2.png
 ```
 
