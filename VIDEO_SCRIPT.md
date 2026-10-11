@@ -31,7 +31,7 @@ brachistochrone equation and the endpoint condition (Eq. 55).
 
 > This is our Quantum Brachistochrone Explorer, built on Qiskit. You pick the energy
 > bound and any initial and final state on the Bloch sphere. The app solves the
-> brachistochrone equation, finds every extremal branch, and reports the restricted
+> brachistochrone equation, finds the extremal branches, and reports the restricted
 > minimum time next to the unrestricted speed-limit time. Then it does something a
 > formula alone can't do: it compiles the optimal evolution into a real Qiskit circuit,
 > runs it on the Aer simulator, and checks the fidelity against the target.
@@ -50,8 +50,9 @@ contour.
 
 ## [1:30-1:50] The headline result
 
-**Visual:** the "Target and minimum times" metrics panel in the app, with the ratio
-highlighted.
+**Visual:** the "Target and minimum times" metrics panel in the app, with the
+"Slow-down factor T / T_free" metric highlighted. Switch to the first mode, "Example A:
+target from an extremal trajectory (k, λ₁)", with its defaults k = 0, λ₁ = 7, ω = 10.
 
 > For the paper's target state, the restricted path takes 1.165 times longer than the
 > free speed limit. That is exactly what their Theorem 1 predicts: restricting your
@@ -69,8 +70,9 @@ highlighted.
 ## Recording notes
 
 - The 1.165 ratio and the five-gate circuit come from the README sample output
-  (target φ = 2.73154, Ω_B = 0.55230, ω = 10). Show that exact run, not a random
-  slider setting.
+  (target φ = 2.73154, Ω_B = 0.55230, ω = 10). That is the first Example A mode with
+  default sliders, not the "Any initial and final state" mode used in the demo segment.
+  Show that exact run, not a random slider setting.
 - The Fig. 2 regeneration takes about a minute. Pre-render it and cut to the saved
   `qb_fig2.png` instead of pressing the button live.
 - Record the app at a wide window so the sidebar and the metrics panel fit in one frame.
