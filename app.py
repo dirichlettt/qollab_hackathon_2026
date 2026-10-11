@@ -4,17 +4,31 @@ arXiv:2204.12792, Example A).  Run:  streamlit run app.py
 Everything is computed locally with Qiskit (statevector + Aer simulator).  The physics lives in
 qb_example_A.py; this file only adds controls, tables and plots on top of it.
 """
+import json
+import os
+import subprocess
+import sys
+
 import numpy as np
 import matplotlib
 
 matplotlib.use("Agg")
 from matplotlib.figure import Figure
 import streamlit as st
-from qiskit import transpile
-from qiskit.quantum_info import Statevector
-from qiskit_aer import AerSimulator
 
 import qb_example_A as qb
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+@st.cache_data(show_spinner="Building and simulating the Qiskit circuit...")
+def run_qiskit(T, l1, omega, shots, phi, OmB):
+    """All Qiskit work happens in a fresh interpreter: see qb_worker.py for why."""
+    args = [sys.executable, os.path.join(HERE, "qb_worker.py")] + [repr(x) for x in (T, l1, omega, shots, phi, OmB)]
+    proc = subprocess.run(args, capture_output=True, text=True, cwd=HERE, timeout=120)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr[-2000:])
+    return json.loads(proc.stdout)
 
 st.set_page_config(page_title="Quantum Brachistochrone Explorer", page_icon="⏱", layout="wide")
 
@@ -92,22 +106,17 @@ st.dataframe(
 
 # ----------------------------------------------------------------------------- circuit
 st.subheader("Qiskit circuit for U(T)")
-qc = qb.qb_circuit(T, l1, omega)
-sim = AerSimulator()
-tqc = transpile(qc, basis_gates=["rz", "sx", "x", "cx"])
-sv = Statevector(qc)
-fid_circ = abs(np.vdot(psi_f, sv.data)) ** 2
+res = run_qiskit(float(T), float(l1), float(omega), int(shots), float(phi), float(OmB))
+counts, probs_exact = res["counts"], res["exact_probs"]
 
 left, right = st.columns([3, 2])
 with left:
-    st.code(qc.draw(output="text"), language="text")
-    st.caption(f"Transpiled to rz/sx/x: {tqc.size()} gates, depth {tqc.depth()}. "
-               f"Statevector fidelity with target: {fid_circ:.10f}")
+    st.code(res["drawing"], language="text")
+    st.caption(f"Transpiled to rz/sx/x: {res['n_gates']} gates, depth {res['depth']}. "
+               f"Statevector fidelity with target: {res['fidelity']:.10f}")
+    with st.expander("Transpiled circuit"):
+        st.code(res["transpiled_drawing"], language="text")
 with right:
-    meas = tqc.copy()
-    meas.measure_all()
-    counts = sim.run(meas, shots=shots).result().get_counts()
-    probs_exact = {"0": abs(psi_f[0]) ** 2, "1": abs(psi_f[1]) ** 2}
     st.markdown(f"**Aer simulation, {shots} shots** (computational basis)")
     st.dataframe(
         [{"outcome": b, "measured fraction": counts.get(b, 0) / shots,
