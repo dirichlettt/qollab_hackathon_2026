@@ -51,6 +51,17 @@ where `l1` is a Lagrange multiplier fixed by the forbidden control.
 
 `bell.py` is a two-line sanity check that Qiskit and Aer are installed (Bell state, 1000 shots).
 
+### Interactive app
+
+`app.py` is a Streamlit front end over the same functions. Pick ω and a target state in the
+sidebar and the app shows the restricted versus unrestricted minimum time, every candidate
+branch `(k, l)` with its fidelity, the Qiskit circuit, an Aer measurement run, the Bloch-vector
+trajectory, and a button that regenerates Fig. 2.
+
+```bash
+streamlit run app.py
+```
+
 ### Sample output
 
 ```
@@ -92,10 +103,19 @@ in `make_figure()` for a faster run.
 
 ## Accessibility
 
-This project is a command-line script with text output and one static figure. All results
-are printed as plain text so they can be read by a screen reader or copied. The figure
-marks the extremal set with a solid black contour line, not only with colour, and uses
-perceptually uniform colormaps.
+The Streamlit app follows standard web accessibility practice:
+
+- Every control has a visible label and a help tooltip; no control is identified by colour
+  or position alone.
+- All controls are native widgets, so they are keyboard navigable and announced by screen
+  readers, and Streamlit respects the operating system's light or dark preference.
+- Numbers are shown as text in metrics and tables, never only inside a plot.
+- The Bloch trajectory plot distinguishes the three components by line style as well as
+  colour, and each figure has a text caption stating what it shows and the key values.
+- The Fig. 2 reproduction marks the extremal set with a solid black contour line, not only
+  with colour, and uses perceptually uniform colormaps.
+
+The command-line script prints every result as plain text so it can be read aloud or copied.
 
 ## How to extend it
 

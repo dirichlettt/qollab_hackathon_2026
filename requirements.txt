@@ -4,3 +4,4 @@ qiskit[visualization]
 scipy
 matplotlib
 jupyter
+streamlit>=1.40
