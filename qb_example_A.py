@@ -2,7 +2,8 @@
 Example A of Yang & del Campo, "Minimum-Time Quantum Control and the Quantum
 Brachistochrone Equation" (arXiv:2204.12792): one qubit, restricted operator X1 = sigma_z.
 
-Closed-subalgebra solution (Eqs. 87-88, with lambda_0 = 1, mu_x = 0, mu_y = omega):
+Closed-subalgebra solution (Eqs. 87-88 specialised to X1 = sigma_z, i.e. Eqs. 92-93,
+with lambda_0 = 1, mu_x = 0, mu_y = omega):
     H(t) = omega * exp(i l1 Z t) Y exp(-i l1 Z t)
     U(t) = exp(i l1 Z t) * exp(-i (omega Y + l1 Z) t)
     F(t) = U(t) F(0) U(t)^dagger,   F(0) = omega Y + l1 Z
@@ -14,15 +15,23 @@ The script
   3. checks the extra endpoint condition (Eq. 55 / Eq. 86): Im<psi_f|H(T)F(T)|psi_f> ~ lambda1*cos(2*Lambda1*T);
   4. reproduces Fig. 2 (a, b) of the paper;
   5. for a prescribed target |psi_f(phi, Omega_B)> evaluates the closed forms (98)-(105): the
-     compatibility condition (105) picks the allowed (k, l), Eq. (103) gives T(k, l), and the
+     compatibility conditions (99)-(101) pick the allowed (k, l), Eq. (103) gives T(k, l), and the
      result is verified with a Qiskit circuit.  NOTE: (phi, Omega_B) must lie on a curve
-     satisfying Eq. (105); a generic target is NOT reached by an extremal trajectory of this form
-     (3 conditions - 2 for the state, 1 for Eq. 55 - on 2 unknowns lambda1, T).
+     satisfying Eqs. (99)-(101); a generic target is NOT reached by an extremal trajectory of this
+     form (3 conditions - 2 for the state, 1 for Eq. 55 - on 2 unknowns lambda1, T).
+     Eq. (105) of the paper is the squared/divided form of (99)-(101); it fixes |sin theta_1| but
+     drops a sign that depends on (k, l), so it is checked in absolute value only (see
+     solve_known_target).
+
+The propagator exp(-i (omega Y + l1 Z) T) is a rotation about the axis (0, omega, l1)/Lambda1 in
+the YZ plane, so it is built exactly from standard gates as Rx(-theta1) Ry(2 Lambda1 T) Rx(theta1)
+(Eq. 95: tan theta1 = l1/omega).  A PauliEvolutionGate with its default single-step Lie-Trotter
+synthesis is NOT exact here (Y and Z do not commute; fidelity ~0.96 after transpilation for the
+demo parameters), and MatrixExponential synthesis trips a bug in the qiskit 2.5 HLS plugin.
 
 Requires: qiskit, numpy, scipy, matplotlib.   Run:  python qb_example_A.py
 """
 import itertools
-import warnings
 import numpy as np
 import matplotlib
 
@@ -30,10 +39,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.linalg import expm
 from qiskit import QuantumCircuit
-from qiskit.circuit.library import PauliEvolutionGate
-from qiskit.quantum_info import Operator, SparsePauliOp, Statevector
-
-warnings.filterwarnings("ignore", message=".*(splu|spsolve).*")  # scipy sparse noise from PauliEvolutionGate
+from qiskit import transpile
+from qiskit.quantum_info import Statevector
 
 OMEGA = 10.0  # norm bound, as in Fig. 2 of the paper
 
@@ -70,11 +77,17 @@ def qb_circuit(T, l1, w=OMEGA):
     """U(T) = exp(i l1 Z T) exp(-i (w Y + l1 Z) T), applied to |+x> = H|0>.
 
     Circuit order (time order): H, exp(-i(wY + l1 Z)T), then exp(+i l1 Z T) = RZ(-2 l1 T).
+    With Lambda1 = sqrt(w^2 + l1^2) and tan(theta1) = l1/w (Eq. 95),
+        wY + l1 Z = Lambda1 (cos theta1 Y + sin theta1 Z) = Lambda1 Rx(theta1) Y Rx(theta1)^dag,
+    so  exp(-i (wY + l1 Z) T) = Rx(theta1) Ry(2 Lambda1 T) Rx(-theta1)   (exact, no Trotter error).
     """
+    Lam = np.hypot(w, l1)
+    th = np.arctan2(l1, w)
     qc = QuantumCircuit(1)
     qc.h(0)  # |0> -> |+x>
-    generator = SparsePauliOp.from_list([("Y", w), ("Z", l1)])
-    qc.append(PauliEvolutionGate(generator, time=T), [0])  # exp(-i (wY+l1 Z) T)
+    qc.rx(-th, 0)
+    qc.ry(2 * Lam * T, 0)
+    qc.rx(th, 0)
     qc.rz(-2 * l1 * T, 0)  # exp(+i l1 Z T)
     return qc
 
@@ -105,6 +118,10 @@ def run_checks():
     psi = U_t(T, l1) @ PSI_I
     fid = abs(np.vdot(psi, sv.data)) ** 2
     print(f"circuit vs analytic fidelity           : {fid:.12f}")
+    # the same circuit after transpilation to a hardware basis must still be exact
+    tqc = transpile(qb_circuit(T, l1), basis_gates=["rz", "sx", "x", "cx"], optimization_level=1)
+    fid_t = abs(np.vdot(psi, Statevector(tqc).data)) ** 2
+    print(f"transpiled (rz,sx,x,cx) fidelity       : {fid_t:.12f}   ({tqc.size()} gates)")
 
     # H = i dU/dt U^dagger  (central difference)
     dt = 1e-6
@@ -146,21 +163,42 @@ def run_checks():
 # ----------------------------------------------------------------------------
 # 4. Fig. 2 of the paper
 # ----------------------------------------------------------------------------
+def endpoint_quantities_vec(T, l1, w=OMEGA):
+    """Vectorised endpoint_quantities over broadcastable arrays T, l1, using the closed-form
+    2x2 exponentials  exp(i a Z) = cos a + i sin a Z,
+                      exp(-i (wY + l1 Z) T) = cos(L T) - i sin(L T) (wY + l1 Z)/L,  L = sqrt(w^2+l1^2).
+    Returns (|<psi_f|psi_i>|, c, Im<psi_f|H F~|psi_f>) with the same conventions as above."""
+    T = np.asarray(T, float)[..., None, None]
+    l1 = np.asarray(l1, float)[..., None, None]
+    L = np.hypot(w, l1)
+    A = w * Y + l1 * Z
+    R = np.cos(l1 * T) * I2 + 1j * np.sin(l1 * T) * Z  # exp(i l1 Z T)
+    E = np.cos(L * T) * I2 - 1j * np.sin(L * T) * A / L  # exp(-i A T)
+    U = R @ E
+    Rd = np.swapaxes(R.conj(), -1, -2)
+    Ud = np.swapaxes(U.conj(), -1, -2)
+    H = w * R @ Y @ Rd
+    F = U @ A @ Ud
+    psi_f = U @ PSI_I[:, None]
+    val = (np.swapaxes(psi_f.conj(), -1, -2) @ H @ F @ psi_f)[..., 0, 0]
+    c = val.real
+    amp = np.abs((np.swapaxes(psi_f.conj(), -1, -2) @ PSI_I[:, None])[..., 0, 0])
+    return amp, c, (val / c).imag
+
+
 def make_figure(path="qb_fig2.png", n_l=161, n_T=161):
     # axes of the paper: omega*T/pi in (0.2, 1.0],  lambda~1 = lambda1/c in (0, 0.2]
     wT = np.linspace(0.2, 1.0, n_T)
     lt = np.linspace(0.001, 0.2, n_l)
     Ts = wT * np.pi / OMEGA
-    amp = np.zeros((n_l, n_T))
-    imag = np.zeros((n_l, n_T))
-    for a, lam_tilde in enumerate(lt):
-        for b, T in enumerate(Ts):
-            # lambda~1 = lambda1 / c.  c itself depends on lambda1, so solve by fixed point.
-            l1 = lam_tilde * OMEGA**2  # c = omega^2 + corrections
-            for _ in range(3):
-                _, c, _ = endpoint_quantities(T, l1)
-                l1 = lam_tilde * c
-            amp[a, b], _, imag[a, b] = endpoint_quantities(T, l1)
+    # lambda~1 = lambda1 / c with c = Re<psi_f|H F|psi_f>.  For this example c = omega^2 exactly
+    # (Fig. 2 caption of the paper); this is asserted below rather than assumed.
+    TT, LL = np.meshgrid(Ts, lt)
+    amp, c, imag = endpoint_quantities_vec(TT, LL * OMEGA**2)
+    assert np.allclose(c, OMEGA**2), "c = Re<psi_f|H F|psi_f> should equal omega^2 here"
+    # spot-check the vectorised closed form against the expm-based functions
+    a0, c0, i0 = endpoint_quantities(Ts[37], lt[91] * OMEGA**2)
+    assert np.allclose([a0, c0, i0], [amp[91, 37], c[91, 37], imag[91, 37]])
 
     fig, axs = plt.subplots(1, 2, figsize=(11, 4.2), sharey=True)
     p0 = axs[0].contourf(wT, lt, amp, levels=20, cmap="YlOrBr")
@@ -204,30 +242,60 @@ def arccot(x):
 
 
 def solve_known_target(phi, OmB, w=OMEGA, kmax=6, lmax=6, tol=1e-6):
-    """Closed-form candidates T(k, l) of Eq. (103) that satisfy the compatibility condition
-    Eq. (105).  Each is then confirmed against the real dynamics (fidelity and Eq. 55)."""
+    """Closed-form candidates T(k, l) of Eq. (103) that satisfy the compatibility conditions
+    Eqs. (99)-(101).  Each is then confirmed against the real dynamics (fidelity and Eq. 55).
+
+    Eq. (105) of the paper is NOT used as the filter: it is (99)-(101) squared and divided, so it
+    only constrains |sin theta_1| and drops a (k, l)-dependent sign.  Used literally it rejects
+    genuine extremal trajectories (e.g. the one generated by k=1, lambda1=3 at omega=10).  It is
+    kept here as an absolute-value sanity check only."""
     psi_f = target_state(phi, OmB)
     ac = arccot(np.sin(phi) * np.tan(2 * OmB))
+    s2, c2 = np.sin(2 * OmB), np.cos(2 * OmB)
     lhs_fac = np.sqrt(1 + (1 / np.tan(2 * OmB)) ** 2 / np.sin(phi) ** 2)
-    rhs = np.sin(2 * OmB) * np.sin(phi)
+    rhs105 = s2 * np.sin(phi)
     out = []
     for k, l in itertools.product(range(0, kmax + 1), range(-lmax, lmax + 1)):
         disc = (np.pi / 4 + k * np.pi / 2) ** 2 - 0.25 * (ac + l * np.pi) ** 2
         if disc <= 0:
             continue
-        cond105 = 2 * (ac / np.pi + l) / ((1 + 2 * k) * lhs_fac)  # lhs of Eq. (105)
-        if abs(cond105 - rhs) > tol:
-            continue
         T = np.sqrt(disc) / abs(w)  # Eq. (103)
         l1 = 0.5 * (ac + l * np.pi) / T  # Eq. (102)
+        sgn = (-1) ** k
+        sin_th, cos_th = 2 * (ac / np.pi + l) / (1 + 2 * k), w / np.hypot(l1, w)  # Eq. (104), (95)
+        res = (sgn * cos_th + np.cos(phi) * s2,  # Eq. (99)
+               sgn * sin_th * np.sin(2 * l1 * T) - c2,  # Eq. (100)
+               sgn * sin_th * np.cos(2 * l1 * T) - np.sin(phi) * s2)  # Eq. (101)
+        if max(abs(r) for r in res) > tol:
+            continue
+        lhs105 = 2 * (ac / np.pi + l) / ((1 + 2 * k) * lhs_fac)
+        assert abs(abs(lhs105) - abs(rhs105)) < tol, "Eq. (105) should hold up to sign"
         fid = abs(np.vdot(psi_f, U_t(T, l1, w) @ PSI_I)) ** 2
         _, _, im = endpoint_quantities(T, l1, w)
         out.append((T, k, l, l1, fid, im))
     return sorted(out)
 
 
+def roundtrip_test(cases=((0, 7.0), (0, -4.0), (1, 3.0), (1, -12.0), (2, -2.0), (3, 5.0))):
+    """Generate a target from a known extremal trajectory (k0, lambda1) and check that
+    solve_known_target recovers it.  (With the literal Eq. (105) filter the odd-sign cases,
+    e.g. (1, 3.0) and (3, 5.0), were lost.)"""
+    print("round-trip of Eqs. (99)-(104):")
+    ok = True
+    for k0, l1_0 in cases:
+        T0 = (np.pi / 4 + k0 * np.pi / 2) / np.hypot(l1_0, OMEGA)
+        phi, OmB = target_params(U_t(T0, l1_0) @ PSI_I)
+        sols = solve_known_target(phi, OmB)
+        hit = any(abs(T - T0) < 1e-6 and abs(l1 - l1_0) < 1e-6 and fid > 1 - 1e-9
+                  for T, k, l, l1, fid, im in sols)
+        ok &= hit
+        print(f"  k={k0} lambda1={l1_0:+6.1f}: recovered={hit}  (candidates: {len(sols)})")
+    print("  all recovered:", ok, "\n")
+
+
 def demo_known_target():
     print("=== Prescribed target (Eqs. 97-105) ===")
+    roundtrip_test()
     # A target that lies on an extremal curve: take the k=0, lambda1=7 trajectory.
     k0, l1_0 = 0, 7.0
     T0 = (np.pi / 4 + k0 * np.pi / 2) / np.hypot(l1_0, OMEGA)
@@ -237,7 +305,7 @@ def demo_known_target():
 
     sols = solve_known_target(phi, OmB)
     if not sols:
-        print("no (k, l) satisfies Eq. (105) for this target")
+        print("no (k, l) satisfies Eqs. (99)-(101) for this target")
         return
     print("\n   T            k   l   lambda1      fidelity      Im<HF~>")
     for T, k, l, l1, fid, im in sols[:6]:

@@ -1,4 +1,6 @@
 qiskit>=2.5
 qiskit-aer>=0.17
 qiskit[visualization]
+scipy
+matplotlib
 jupyter
