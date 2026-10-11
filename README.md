@@ -1,7 +1,7 @@
 # Quantum Brachistochrone on a Qubit — Qollab Hackathon 2026
 
 Submission for the 2026 Qollab Hackathon. Built with [Qiskit](https://qiskit.org) and
-released under the MIT license.
+released under the MIT license. Video link: https://youtu.be/gS2YUdDdYI4
 
 ## What it does
 
